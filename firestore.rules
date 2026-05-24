@@ -1,0 +1,158 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUserPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userExists() {
+      return signedIn() && exists(currentUserPath());
+    }
+
+    function userDoc() {
+      return get(currentUserPath());
+    }
+
+    function userRole() {
+      return userExists() ? userDoc().data.role : null;
+    }
+
+    function userCompanyId() {
+      return userExists() ? userDoc().data.company_id : null;
+    }
+
+    function isOwner() {
+      return userExists() && userRole() == 'owner';
+    }
+
+    function isAdmin() {
+      return userExists() && userRole() == 'admin';
+    }
+
+    function sameCompany(companyId) {
+      return signedIn() && (
+        isOwner() ||
+        userCompanyId() == companyId
+      );
+    }
+
+    function isCompanyAdmin(companyId) {
+      return sameCompany(companyId) && (
+        isOwner() ||
+        isAdmin()
+      );
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (
+        isSelf(uid) ||
+        isOwner() ||
+        userCompanyId() == resource.data.company_id
+      );
+
+      allow create: if signedIn() && (
+        isSelf(uid) ||
+        isOwner() ||
+        request.resource.data.company_id == userCompanyId()
+      );
+
+      allow update: if signedIn() && (
+        isSelf(uid) ||
+        isOwner() ||
+        resource.data.company_id == userCompanyId()
+      );
+
+      allow delete: if false;
+    }
+
+    match /companies/{companyId} {
+      allow read: if sameCompany(companyId);
+      allow write: if isCompanyAdmin(companyId);
+
+      match /announcements/{announcementId} {
+        allow read: if sameCompany(companyId);
+        allow create, update, delete: if isCompanyAdmin(companyId);
+      }
+
+      match /notification_settings/{docId} {
+        allow read: if sameCompany(companyId);
+        allow create, update, delete: if isCompanyAdmin(companyId);
+      }
+
+      match /notification_queue/{queueId} {
+        allow read: if isCompanyAdmin(companyId);
+        allow create, update, delete: if isCompanyAdmin(companyId);
+      }
+
+      match /notification_logs/{logId} {
+        allow read: if isCompanyAdmin(companyId);
+        allow create, update, delete: if isCompanyAdmin(companyId);
+      }
+
+      match /announcement_delivery_logs/{logId} {
+        allow read: if isCompanyAdmin(companyId);
+        allow create, update, delete: if isCompanyAdmin(companyId);
+      }
+
+      match /notification_dedup/{dedupId} {
+        allow read: if isCompanyAdmin(companyId);
+        allow create, update, delete: if isCompanyAdmin(companyId);
+      }
+
+      match /users/{uid} {
+        allow read: if sameCompany(companyId) && (
+          isSelf(uid) ||
+          isCompanyAdmin(companyId)
+        );
+
+        allow create, update: if isCompanyAdmin(companyId);
+        allow delete: if false;
+
+        match /notification_inbox/{notificationId} {
+          allow read: if sameCompany(companyId) && (
+            isSelf(uid) ||
+            isCompanyAdmin(companyId)
+          );
+
+          allow create: if isCompanyAdmin(companyId);
+
+          allow update: if (
+            isSelf(uid) ||
+            isCompanyAdmin(companyId)
+          );
+
+          allow delete: if isCompanyAdmin(companyId);
+        }
+
+        match /fcm_tokens/{tokenId} {
+          allow read: if isSelf(uid) || isCompanyAdmin(companyId);
+          allow create, update: if isSelf(uid) || isCompanyAdmin(companyId);
+          allow delete: if isSelf(uid) || isCompanyAdmin(companyId);
+        }
+      }
+
+      match /dashboard_daily_summary/{date} {
+        allow read: if sameCompany(companyId);
+        allow create, update, delete: if isCompanyAdmin(companyId);
+      }
+
+      match /report_cache/{month} {
+        allow read: if isCompanyAdmin(companyId);
+        allow create, update, delete: if isCompanyAdmin(companyId);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
