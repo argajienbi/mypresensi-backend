@@ -9,7 +9,7 @@ import {
   writeNotificationLog,
 } from "./utils";
 
-const REGION = "asia-southeast1";
+const REGION = "asia-southeast2";
 
 export const onNotificationQueueCreated = onDocumentCreated(
   {
